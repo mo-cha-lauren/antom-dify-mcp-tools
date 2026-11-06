@@ -6,8 +6,8 @@ label:
   en_US: Antom MCP Tools
   zh_Hans: Antom MCP 查询工具
 description:
-  en_US: Discover and call allowlisted Antom developer MCP queries and diagnostics.
-  zh_Hans: 发现并调用白名单内的 Antom 开发者 MCP 查询与诊断工具。
+  en_US: Read-only queries and diagnostics for merchants approved through the Antom MCP allowlist.
+  zh_Hans: 仅向获准加入 Antom MCP 白名单的商户提供只读查询和诊断工具。
 icon: icon.svg
 resource:
   memory: 268435456

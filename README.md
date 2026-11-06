@@ -14,11 +14,25 @@ For plugin support, email [the maintainer](mailto:luoxiaofan.lxf@ant-intl.com)
 or open a [GitHub issue](https://github.com/mo-cha-lauren/antom-dify-mcp-tools/issues).
 Include the plugin version and a redacted error message.
 
-## Requirements
+## Get access to Antom MCP
+
+**Antom developer MCP access requires an allowlist application.** Sign up as a
+merchant first, then apply separately for MCP access.
+
+1. **New to Antom?** [Start merchant onboarding](https://s.antom.com/ruzhu).
+   If you already have an Antom merchant account, go to step 2.
+2. **Apply for the MCP allowlist.** Email
+   [Antom integration support](mailto:pub_antom_integration_service@antom.com)
+   to request MCP access for your merchant account. Wait for Antom's approval.
+3. **After approval**, have your merchant administrator enable MCP Access in
+   Antom Dashboard under **Settings > Team** for the Test or Live mode you plan
+   to use. Then authorize the plugin in Dify.
+
+See the [Antom MCP access guide](https://docs.antom.com/ac/ref/mcp) for details.
+
+## Dify requirements
 
 - Dify 1.14.2 or later with permission to install local plugin packages.
-- Your own Antom merchant account with MCP access enabled. Access is currently
-  allowlisted and Test/Live access is managed separately in Antom Dashboard.
 - The Dify plugin runtime must be able to connect over HTTPS to `mcp.antom.com`
   for queries and `dashboard-apiv2.antom.com` for OAuth.
 
