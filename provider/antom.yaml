@@ -1,0 +1,39 @@
+identity:
+  author: antom
+  name: antom_mcp_tools
+  label:
+    en_US: Antom MCP Tools
+    zh_Hans: Antom MCP 查询工具
+  description:
+    en_US: Allowlisted developer queries through the official Antom MCP service.
+    zh_Hans: 通过官方 Antom MCP 服务执行白名单内的开发者查询。
+  icon: icon.svg
+  tags: [business, utilities]
+oauth_schema:
+  client_schema:
+    - name: oauth_state_key
+      type: secret-input
+      required: true
+      label:
+        en_US: OAuth state encryption key
+        zh_Hans: OAuth 状态加密密钥
+      help:
+        en_US: Generate a Fernet key locally as described in README. This is not an Antom merchant key.
+        zh_Hans: 按 README 在本地生成 Fernet 密钥；此项不是 Antom 商户密钥。
+      url: https://cryptography.io/en/latest/fernet/
+  credentials_schema:
+    - name: access_token
+      type: secret-input
+      label: {en_US: Access token, zh_Hans: 访问令牌}
+    - name: refresh_token
+      type: secret-input
+      label: {en_US: Refresh token, zh_Hans: 刷新令牌}
+    - name: client_id
+      type: secret-input
+      label: {en_US: Registered OAuth client, zh_Hans: 动态注册的 OAuth 客户端}
+tools:
+  - tools/discover.yaml
+  - tools/query.yaml
+extra:
+  python:
+    source: provider/antom.py

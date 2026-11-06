@@ -1,0 +1,31 @@
+identity:
+  name: query_antom
+  author: antom
+  label: {en_US: Query Antom, zh_Hans: 查询 Antom}
+description:
+  human:
+    en_US: Call a supported developer query using the live server's input schema.
+    zh_Hans: 按服务实时输入定义调用受支持的开发者查询或诊断工具。
+  llm: First discover_antom_queries to get the selected tool's live input_schema. Pass tool_name and arguments as a JSON object string. Never guess fields or send keys or tokens. This tool only permits the six documented developer queries and diagnostics, and rejects tools not exposed to the account.
+parameters:
+  - name: tool_name
+    type: string
+    required: true
+    form: llm
+    label: {en_US: Tool name, zh_Hans: 工具名}
+    human_description:
+      en_US: Choose a name returned by Discover Antom queries.
+      zh_Hans: 使用发现工具返回的工具名。
+    llm_description: Exact allowlisted name returned by discover_antom_queries.
+  - name: arguments
+    type: string
+    required: true
+    form: llm
+    label: {en_US: Arguments JSON, zh_Hans: JSON 参数}
+    human_description:
+      en_US: A JSON object matching the discovered input schema.
+      zh_Hans: 符合实时工具定义的 JSON 对象。
+    llm_description: JSON object encoded as a string, strictly matching the live input_schema. Never invent parameters.
+extra:
+  python:
+    source: tools/query.py
