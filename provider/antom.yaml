@@ -3,10 +3,10 @@ identity:
   name: antom_mcp_tools
   label:
     en_US: Antom MCP Tools
-    zh_Hans: Antom MCP 查询工具
+    zh_Hans: Antom MCP 工具
   description:
-    en_US: Allowlisted developer queries through the official Antom MCP service.
-    zh_Hans: 通过官方 Antom MCP 服务执行白名单内的开发者查询。
+    en_US: Apply for the Antom MCP merchant allowlist before authorizing tool calls in Dify. See the README for onboarding.
+    zh_Hans: 请先申请 Antom MCP 商户白名单，获批后在 Dify 授权调用工具。新用户入驻入口见 README。
   icon: icon.svg
   tags: [business, utilities]
 oauth_schema:

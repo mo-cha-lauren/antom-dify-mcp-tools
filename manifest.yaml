@@ -1,13 +1,13 @@
-version: 0.0.3
+version: 0.0.4
 type: plugin
 author: antom
 name: antom_mcp_tools
 label:
   en_US: Antom MCP Tools
-  zh_Hans: Antom MCP 查询工具
+  zh_Hans: Antom MCP 工具
 description:
-  en_US: Discover and call allowlisted Antom developer MCP queries and diagnostics.
-  zh_Hans: 发现并调用白名单内的 Antom 开发者 MCP 查询与诊断工具。
+  en_US: Discover and call the tools Antom MCP offers to your merchant account. Merchant allowlist approval is required.
+  zh_Hans: 发现和调用 Antom MCP 为当前商户提供的工具。商户须先申请 MCP 白名单并获批。
 icon: icon.svg
 resource:
   memory: 268435456
