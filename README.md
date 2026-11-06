@@ -1,11 +1,11 @@
 # Antom MCP Tools for Dify
 
-Antom merchants can use a Dify workflow to query merchant profiles, transaction
-details, integration logs, diagnostics and billing report URLs through the
-[Antom developer MCP service](https://docs.antom.com/ac/ref/mcp). The plugin
-exposes two Dify tools. **Discover Antom queries** lists the supported tools and
-input schemas available to the authorized account. **Query Antom** runs one of
-those tools with the arguments you provide.
+Antom merchants can use two Dify actions to work with the
+[Antom developer MCP service](https://docs.antom.com/ac/ref/mcp).
+**Discover Antom tools** lists the tools the service advertises for the selected
+merchant credential, together with their names and input schemas.
+**Call an Antom tool** runs a selected tool with that credential. Depending on
+the account, a tool can read data or change it.
 
 The source is available from the
 [plugin repository](https://github.com/mo-cha-lauren/antom-dify-mcp-tools).
@@ -34,13 +34,13 @@ See the [Antom MCP access guide](https://docs.antom.com/ac/ref/mcp) for details.
 
 - Dify 1.14.2 or later with permission to install local plugin packages.
 - The Dify plugin runtime must be able to connect over HTTPS to `mcp.antom.com`
-  for queries and `dashboard-apiv2.antom.com` for OAuth.
+  for tool calls and `dashboard-apiv2.antom.com` for OAuth.
 
 ## Install and authorize
 
 1. Build the package with the official Dify Plugin CLI. From the source
    repository root, run
-   `dify plugin package . -o ../antom_mcp_tools-0.0.3.difypkg`.
+   `dify plugin package . -o ../antom_mcp_tools-0.0.4.difypkg`.
 2. In Dify, open **Integrations > Install > Local package** and choose the package.
    Use a workspace that permits local packages. After installation, open
    **Integrations > Tools > Tool Plugin**, search for **Antom**, and open
@@ -53,39 +53,36 @@ See the [Antom MCP access guide](https://docs.antom.com/ac/ref/mcp) for details.
 4. Click **Authorize** and sign in to Antom yourself. Review and approve the
    permissions. Each authorization dynamically registers a public OAuth client.
    PKCE protects the code exchange.
-5. Add **Discover Antom queries** to a Workflow Tool node and run the workflow.
-   The result lists only supported tools that your account actually exposes.
-6. Add **Query Antom**, select a returned name, and supply `arguments` as a JSON
-   object string matching its `input_schema`. The plugin validates the arguments
-   against a fresh server listing before making the call.
+5. Add **Discover Antom tools** to a Workflow Tool node and run it. In its
+   `tools` output, find the tool name and `input_schema` for your operation.
+6. Add **Call an Antom tool**, select the same credential, and enter that name
+   and an `arguments` JSON object string matching the schema. Before each call,
+   the plugin checks the current server listing and validates the arguments.
 
-Discovery reports `server_tool_count`, `supported_tool_count`, `status`, and
-`excluded_tools`. If the service returns zero tools, discovery reports
-`no_server_tools`. If it returns tools but all fall outside the plugin's
-allowlist or carry an explicit non-read-only marker, discovery reports
-`no_supported_tools`. Check `excluded_tools` for names and reasons.
+### Changes in 0.0.4
 
-### 0.0.3 tool names
+Discovery now returns the full catalog advertised by Antom for the selected
+credential, including newly introduced tool names and tools marked
+`readOnlyHint: false`. The plugin applies no local filter based on tool names
+or read-only annotations. Antom decides which tools the merchant may execute.
+If the server returns zero tools, discovery reports `no_server_tools`.
 
-Use a name returned by **Discover Antom queries** and the `input_schema`
-returned alongside it. Version 0.0.3 recognizes the following pairs.
-
-| Documented name | Name advertised by the tested service |
-| --- | --- |
-| `antom_inquire_merchant_profile` | `get_antom_merchant_profile` |
-| `antom_query_transaction_detail` | `get_antom_transaction_details` |
-| `antom_diagnose_error` | `antom_error_diagnose` |
-| `antom_inquire_diagnosis_result` | `get_antom_diagnosis_result` |
-| `antom_inquire_integration_logs` | `get_antom_integration_logs` |
-| `antom_fetch_bill_download_url` | `get_antom_report_downloadUrl` |
+The two Dify action identifiers remain `discover_antom_queries` and
+`query_antom` so existing workflows can still refer to them. When upgrading
+from 0.0.3, review any agents or workflows that select tools automatically.
+Their available operations can now include writes. For example, one account's
+catalog included `create_antom_subscription_price` and
+`create_antom_subscription_product`. Check the selected tool and its inputs
+before running a write, and leave automatic retries off. If the call times out,
+check the result in Antom before retrying to avoid repeating a completed change.
 
 ### Query merchant onboarding status
 
-In Dify Cloud, version 0.0.3 discovered 6 supported tools from the 12 returned
-by one authorized account. The merchant profile query was exercised end to end.
-For the other five tools, this test verified discovery and their input schemas.
+In an earlier Dify Cloud test, Antom returned 12 tools for one merchant to
+version 0.0.3. That version exposed six of them, and the merchant profile query
+completed successfully. This is the historical end-to-end example.
 
-1. On the **Query Antom** node, select the credential you used for discovery.
+1. On the **Call an Antom tool** node, select the credential you used for discovery.
 2. If discovery lists `get_antom_merchant_profile` with the corresponding input
    schema, enter it as **Tool name** and enter `{"scopeList":["ONBOARD"]}` as
    **Arguments JSON**.
@@ -96,16 +93,12 @@ For the other five tools, this test verified discovery and their input schemas.
 
 ## Boundaries
 
-- Only the six query and diagnostic capabilities in the table are eligible. The
-  plugin excludes any tool explicitly marked non-read-only. The query uses the
-  OAuth credential selected on the workflow node. Creating payments, refunds or
-  subscriptions and transferring assets all fall outside its scope.
 - Dify stores OAuth credentials. A temporary encrypted state includes PKCE data
   and the exact Dify callback, and expires after ten minutes.
-- Requests go to the two fixed HTTPS destinations listed under **Requirements**
+- Requests go to the two fixed HTTPS destinations listed under **Dify requirements**
   with TLS verification and bounded timeouts. The plugin suppresses raw upstream
-  errors and makes a single query attempt.
-- Query results may contain merchant, transaction, log or billing data. Only use
+  errors and makes one tool call per invocation.
+- Tool results may contain merchant, transaction, log or billing data. Only use
   workflows and models that your organization permits to process this data.
 - One workspace test encountered a credential refresh failure. Reauthorizing in
   Dify and selecting the new credential on the workflow nodes restored access.

@@ -10,8 +10,11 @@ The OAuth state key remains in Dify's OAuth client configuration. The temporary 
 is authenticated and encrypted and contains the callback URL, registered client
 identifier, PKCE verifier and a random nonce.
 
-Queries transmit their arguments to Antom. Results may include merchant details,
-transaction data, integration logs, diagnosis results or billing download URLs.
+Calling a tool transmits the selected tool name and its arguments to Antom.
+The tools available to a merchant come from Antom at runtime. Tool inputs and
+outputs vary by operation. Reads may return merchant details, transaction
+data, integration logs, diagnosis results or billing download URLs. Writes may
+send product or price details and create records in the merchant's account.
 Results are returned to the Dify workflow/agent that invoked the tool. Dify may
 retain workflow history and send results to configured model providers according
 to the user's application configuration. Operators must choose permitted models,
