@@ -12,11 +12,9 @@ import httpx
 import httpx2
 import pytest
 from cryptography.fernet import Fernet
-from mcp_types import Tool, ToolAnnotations
 from werkzeug import Request
 
 import antom_client as client
-from tool_catalog import exclusion_reason
 import provider.antom as oauth
 
 REDIRECT = 'https://cloud.dify.ai/console/api/oauth/plugin/antom/antom_mcp_tools/callback?proxy_context=test-context'
@@ -29,8 +27,7 @@ METADATA = {
     'token_endpoint_auth_methods_supported': ['none'],
 }
 
-# Names from the merchant's discovery response. The exercises below use only
-# synthetic schemas and data; the merchant response did not include schemas.
+# The names came from discovery. All tool definitions and arguments below are synthetic.
 QUERY_SPELLINGS = [
     ('antom_diagnose_error', 'antom_error_diagnose'),
     ('antom_inquire_diagnosis_result', 'get_antom_diagnosis_result'),
@@ -164,10 +161,14 @@ def mcp_http(monkeypatch):
             result = {'protocolVersion': '2025-11-25', 'capabilities': {'tools': {}},
                       'serverInfo': {'name': 'synthetic-antom', 'version': 'test'}}
         elif method == 'tools/list':
-            result = {'tools': behavior.get('tools', [
-                {'name': selected, 'inputSchema': schema, 'annotations': {'readOnlyHint': True}},
-                {'name': 'create_payment', 'inputSchema': {'type': 'object'}},
-            ])}
+            if 'pages' in behavior:
+                cursor = body.get('params', {}).get('cursor')
+                result = behavior['pages'][cursor]
+            else:
+                result = {'tools': behavior.get('tools', [
+                    {'name': selected, 'inputSchema': schema, 'annotations': {'readOnlyHint': True}},
+                    {'name': 'create_payment', 'inputSchema': {'type': 'object'}},
+                ])}
         elif method == 'tools/call':
             assert body['params']['name'] == behavior.get('expected_call_name', selected)
             if 'expected_arguments' in behavior:
@@ -186,10 +187,10 @@ def mcp_http(monkeypatch):
 def test_actual_mcp_handshake_discovery_and_query(mcp_http):
     calls, _ = mcp_http
     listing = client.execute('synthetic-access')
-    assert [t['name'] for t in listing['tools']] == ['antom_query_transaction_detail']
+    assert [t['name'] for t in listing['tools']] == ['antom_query_transaction_detail', 'create_payment']
     assert listing['server_tool_count'] == 2
-    assert listing['supported_tool_count'] == 1
-    assert listing['excluded_tools'] == [{'name': 'create_payment', 'reason': 'unsupported_tool_name'}]
+    assert listing['supported_tool_count'] == 2
+    assert listing['excluded_tools'] == []
     result = client.execute('synthetic-access', 'antom_query_transaction_detail', {'reference': 'synthetic-reference'})
     assert result['content'][0]['text'] == 'synthetic-result'
     assert 'initialize' in calls and 'tools/call' in calls
@@ -202,56 +203,62 @@ def test_bad_arguments_prevent_mcp_tool_call(mcp_http):
     assert 'tools/call' not in calls
 
 
-@pytest.mark.parametrize('write_tool', ['create_payment', 'create_antom_subscription_price',
-                                         'create_antom_subscription_product'])
-def test_write_tool_blocked_before_network(mcp_http, write_tool):
-    calls, _ = mcp_http
-    with pytest.raises(client.AntomError, match='allowlist'):
-        client.execute('synthetic-access', write_tool, {})
-    assert not calls
+@pytest.mark.parametrize('name', [
+    'create_antom_subscription_price', 'create_antom_subscription_product', 'future_antom_action',
+])
+def test_advertised_write_tool_is_discoverable_and_callable(mcp_http, name):
+    calls, behavior = mcp_http
+    schema = {'type': 'object', 'properties': {'note': {'type': 'string'}},
+              'required': ['note'], 'additionalProperties': False}
+    hints = {'readOnlyHint': False, 'destructiveHint': True}
+    behavior['tools'] = [{'name': name, 'inputSchema': schema, 'annotations': hints}]
+    behavior['expected_call_name'] = name
+    behavior['expected_arguments'] = {'note': 'synthetic'}
+    listing = client.execute('synthetic-access')
+    item, = listing['tools']
+    assert item['name'] == name
+    assert item['input_schema'] == schema
+    assert item['annotations']['readOnlyHint'] is False
+    assert item['annotations']['destructiveHint'] is True
+    assert 'tools/call' not in calls
+    with pytest.raises(client.AntomError, match='live tool schema'):
+        client.execute('synthetic-access', name, {'invented': True})
+    assert 'tools/call' not in calls
+    result = client.execute('synthetic-access', name, {'note': 'synthetic'})
+    assert result['content'][0]['text'] == 'synthetic-result'
+    assert calls.count('tools/call') == 1
+
+
+def test_tool_removed_after_discovery_is_not_dispatched(mcp_http):
+    calls, behavior = mcp_http
+    name = 'temporary_account_tool'
+    behavior['tools'] = [{'name': name, 'inputSchema': {'type': 'object'}}]
+    assert [t['name'] for t in client.execute('synthetic-access')['tools']] == [name]
+    behavior['tools'] = []
+    with pytest.raises(client.AntomError):
+        client.execute('synthetic-access', name, {})
+    assert calls.count('tools/list') == 2
+    assert 'tools/call' not in calls
 
 
 def test_upstream_tool_errors_are_redacted(mcp_http):
-    _, behavior = mcp_http
+    calls, behavior = mcp_http
     behavior['error'] = True
     with pytest.raises(client.AntomError) as error:
         client.execute('synthetic-access', 'antom_query_transaction_detail', {'reference': 'synthetic-reference'})
     assert 'upstream-private-error' not in str(error.value)
+    assert calls.count('tools/call') == 1
 
 
-def test_server_non_read_only_annotation_is_rejected():
-    tool = Tool(name='antom_query_transaction_detail', input_schema={'type': 'object'},
-                annotations=ToolAnnotations(read_only_hint=False))
-    assert exclusion_reason(tool) == "server_marks_non_read_only"
-
-
-@pytest.mark.parametrize('annotations', [None, {}, {'destructiveHint': False}])
-def test_missing_read_only_hint_does_not_hide_allowlisted_query(annotations):
-    tool = Tool.model_validate({'name': 'antom_query_transaction_detail',
-                                'inputSchema': {'type': 'object'}, 'annotations': annotations})
-    assert exclusion_reason(tool) is None
-
-
-def test_discovery_distinguishes_server_empty_from_filtered_empty(mcp_http):
+def test_empty_server_remains_empty(mcp_http):
     calls, behavior = mcp_http
     behavior['tools'] = []
     empty = client.execute('synthetic-access')
     assert empty['status'] == 'no_server_tools'
     assert empty['server_tool_count'] == 0
-    behavior['tools'] = [
-        {'name': 'synthetic_subscription_lookup', 'inputSchema': {'type': 'object'}},
-        {'name': 'antom_query_transaction_detail', 'inputSchema': {'type': 'object'},
-         'annotations': {'readOnlyHint': False}},
-    ]
-    filtered = client.execute('synthetic-access')
-    assert filtered['status'] == 'no_supported_tools'
-    assert filtered['server_tool_count'] == 2
-    assert filtered['supported_tool_count'] == 0
-    assert filtered['excluded_tools'] == [
-        {'name': 'synthetic_subscription_lookup', 'reason': 'unsupported_tool_name'},
-        {'name': 'antom_query_transaction_detail', 'reason': 'server_marks_non_read_only'},
-    ]
-    assert 'input_schema' not in json.dumps(filtered['excluded_tools'])
+    assert empty['tools'] == []
+    assert empty['supported_tool_count'] == 0
+    assert empty['excluded_tools'] == []
     assert 'tools/call' not in calls
 
 
@@ -265,18 +272,28 @@ def test_discover_tool_renders_summary_without_requiring_trace(monkeypatch):
     assert messages[1].message.text == payload['summary']
 
 
+@pytest.mark.parametrize('parameters', [{}, {'tool_name': None}, {'tool_name': ''}, {'tool_name': ' '}])
+def test_call_action_requires_a_tool_name_without_running_discovery(mcp_http, parameters):
+    from tools.query import QueryAntom
+
+    calls, _ = mcp_http
+    tool = QueryAntom.from_credentials({'access_token': 'synthetic-access'})
+    with pytest.raises(client.AntomError):
+        list(tool._invoke(parameters))
+    assert not calls
+
+
 def test_discovery_with_reported_tool_names(mcp_http):
     calls, behavior = mcp_http
-    supported = {wire for _, wire in QUERY_SPELLINGS}
+    reported = {wire for _, wire in QUERY_SPELLINGS} | set(OTHER_REPORTED_NAMES)
     behavior['tools'] = [{'name': name, 'inputSchema': {'type': 'object'}}
-                         for name in sorted(supported | set(OTHER_REPORTED_NAMES))]
+                         for name in sorted(reported)]
     listing = client.execute('synthetic-access')
     assert listing['status'] == 'ready'
     assert listing['server_tool_count'] == 12
-    assert listing['supported_tool_count'] == 6
-    assert {t['name'] for t in listing['tools']} == supported
-    assert {t['name']: t['reason'] for t in listing['excluded_tools']} == {
-        name: 'unsupported_tool_name' for name in OTHER_REPORTED_NAMES}
+    assert listing['supported_tool_count'] == 12
+    assert {t['name'] for t in listing['tools']} == reported
+    assert listing['excluded_tools'] == []
     assert 'tools/call' not in calls
 
 
@@ -306,28 +323,39 @@ def test_wire_query_uses_live_schema_for_validation_and_dispatch(mcp_http):
     assert result['content'][0]['text'] == 'synthetic-result'
 
 
-def test_non_read_only_wire_alias_cannot_be_invoked_by_either_spelling(mcp_http):
-    calls, behavior = mcp_http
-    documented, wire = QUERY_SPELLINGS[0]
-    behavior['tools'] = [{'name': wire, 'inputSchema': {'type': 'object'},
-                          'annotations': {'readOnlyHint': False}}]
-    listing = client.execute('synthetic-access')
-    assert listing['tools'] == []
-    assert listing['excluded_tools'] == [{'name': wire, 'reason': 'server_marks_non_read_only'}]
-    for name in [documented, wire]:
-        with pytest.raises(client.AntomError):
-            client.execute('synthetic-access', name, {})
-    assert 'tools/call' not in calls
-
-
-def test_exact_advertised_query_is_preferred_and_its_read_only_flag_is_respected(mcp_http):
+def test_exact_advertised_name_takes_precedence_over_a_legacy_alias(mcp_http):
     calls, behavior = mcp_http
     documented, wire = QUERY_SPELLINGS[1]
-    behavior['tools'] = [{'name': name, 'inputSchema': {'type': 'object'}} for name in [wire, documented]]
+    behavior['tools'] = [{'name': wire, 'inputSchema': {'type': 'object'}},
+                         {'name': documented, 'inputSchema': {'type': 'object'},
+                          'annotations': {'readOnlyHint': False}}]
     behavior['expected_call_name'] = documented
     client.execute('synthetic-access', documented, {})
     assert calls.count('tools/call') == 1
-    behavior['tools'][1]['annotations'] = {'readOnlyHint': False}
-    with pytest.raises(client.AntomError):
-        client.execute('synthetic-access', documented, {})
+
+
+def test_discovery_and_call_can_reach_beyond_twenty_pages(mcp_http):
+    calls, behavior = mcp_http
+    names = [f'remote_tool_{i}' for i in range(22)]
+    pages = {}
+    for i, name in enumerate(names):
+        cursor = str(i) if i else None
+        pages[cursor] = {'tools': [{'name': name, 'inputSchema': {'type': 'object'}}]}
+        if i < len(names) - 1:
+            pages[cursor]['nextCursor'] = str(i + 1)
+    behavior['pages'] = pages
+    behavior['expected_call_name'] = names[-1]
+    assert [t['name'] for t in client.execute('synthetic-access')['tools']] == names
+    client.execute('synthetic-access', names[-1], {})
+    assert calls.count('tools/list') == 2 * len(names)
     assert calls.count('tools/call') == 1
+
+
+def test_repeated_pagination_cursor_fails_without_dispatch(mcp_http):
+    calls, behavior = mcp_http
+    behavior['pages'] = {None: {'tools': [], 'nextCursor': 'cycle'},
+                         'cycle': {'tools': [], 'nextCursor': 'cycle'}}
+    with pytest.raises(client.AntomError):
+        client.execute('synthetic-access', 'some_tool', {})
+    assert calls.count('tools/list') == 2
+    assert 'tools/call' not in calls

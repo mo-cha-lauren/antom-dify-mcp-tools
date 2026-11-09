@@ -1,12 +1,12 @@
 identity:
   name: query_antom
   author: antom
-  label: {en_US: Query Antom, zh_Hans: 查询 Antom}
+  label: {en_US: Call an Antom tool, zh_Hans: 调用 Antom 工具}
 description:
   human:
-    en_US: Call a supported developer query using the live server's input schema.
-    zh_Hans: 按服务实时输入定义调用受支持的开发者查询或诊断工具。
-  llm: First discover_antom_queries to get the selected tool's live input_schema. Pass tool_name and arguments as a JSON object string. Never guess fields or send keys or tokens. This tool only permits the six documented developer queries and diagnostics, and rejects tools not exposed to the account.
+    en_US: Call a tool advertised by Antom using its current input schema. Tools may read or change merchant data.
+    zh_Hans: 按 Antom 当前的输入定义调用指定工具。工具可读取或更改商户数据。
+  llm: Use discover_antom_queries to obtain the live tool name and input_schema. Pass tool_name and arguments as a JSON object string. Never send keys or tokens. Check the intended operation and arguments before writes. After an ambiguous result, check the outcome in Antom before retrying a write.
 parameters:
   - name: tool_name
     type: string
@@ -14,9 +14,9 @@ parameters:
     form: llm
     label: {en_US: Tool name, zh_Hans: 工具名}
     human_description:
-      en_US: Choose a name returned by Discover Antom queries.
+      en_US: Choose a name returned by Discover Antom tools.
       zh_Hans: 使用发现工具返回的工具名。
-    llm_description: Exact allowlisted name returned by discover_antom_queries.
+    llm_description: Tool name advertised by Antom and returned by discover_antom_queries for the selected credential.
   - name: arguments
     type: string
     required: true

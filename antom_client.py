@@ -8,7 +8,7 @@ from jsonschema import Draft202012Validator
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from mcp_types import Implementation, PaginatedRequestParams
-from tool_catalog import ALLOWED_TOOLS, discovery_result, resolve_tool
+from tool_catalog import discovery_result, resolve_tool
 
 SERVER_URL = "https://mcp.antom.com"
 ISSUER = "https://dashboard-apiv2.antom.com"
@@ -76,8 +76,8 @@ async def _guard_mcp_request(request):
 async def _execute(token: str, tool_name: str | None, arguments: dict | None):
     if not isinstance(token, str) or not token or any(c.isspace() for c in token):
         raise AntomError("Authorize your Antom account in the plugin settings first.")
-    if tool_name is not None and tool_name not in ALLOWED_TOOLS:
-        raise AntomError("This tool is outside the plugin's query and diagnosis allowlist.")
+    if tool_name is not None and (not isinstance(tool_name, str) or not tool_name.strip()):
+        raise AntomError("Select a tool name returned by Antom discovery.")
     async with httpx2.AsyncClient(
         headers={"Authorization": "Bearer " + token}, timeout=30,
         follow_redirects=False, event_hooks={"request": [_guard_mcp_request]},
@@ -85,28 +85,30 @@ async def _execute(token: str, tool_name: str | None, arguments: dict | None):
         async with streamable_http_client(SERVER_URL, http_client=http) as streams:
             async with ClientSession(
                 *streams, read_timeout_seconds=30,
-                client_info=Implementation(name="antom-dify-mcp-tools", version="0.0.3"),
+                client_info=Implementation(name="antom-dify-mcp-tools", version="0.0.4"),
             ) as session:
                 await session.initialize()
                 server_tools = []
                 cursor = None
-                for _ in range(20):
+                seen_cursors = set()
+                while True:
                     page = await session.list_tools(params=PaginatedRequestParams(cursor=cursor))
                     server_tools.extend(page.tools)
                     cursor = page.next_cursor
-                    if not cursor:
+                    if cursor is None:
                         break
-                else:
-                    raise AntomError("Tool discovery exceeded the page limit.")
+                    if cursor in seen_cursors:
+                        raise AntomError("Antom returned a repeated tool discovery cursor.")
+                    seen_cursors.add(cursor)
                 if tool_name is None:
                     return discovery_result(server_tools)
                 target = resolve_tool(server_tools, tool_name)
                 if target is None:
-                    raise AntomError("The selected tool is unavailable to this plugin. Discover tools to check exclusions.")
+                    raise AntomError("Antom did not advertise the selected tool for this authorization. Discover tools again.")
                 validate_arguments(target.input_schema, arguments or {})
                 result = await session.call_tool(target.name, arguments or {})
                 if result.is_error:
-                    raise AntomError("Antom could not complete the query. Check account permissions and inputs.")
+                    raise AntomError("Antom returned a tool error. Check the inputs, permissions and operation status before repeating the call.")
                 return result.model_dump(mode="json", by_alias=True, exclude_none=True)
 
 
@@ -117,7 +119,9 @@ def execute(token: str, tool_name: str | None = None, arguments: dict | None = N
     try:
         result = asyncio.run(bounded())
         if len(json.dumps(result).encode()) > 524288:
-            raise AntomError("The response exceeds 512 KiB. Narrow your query.")
+            if tool_name is None:
+                raise AntomError("The tool discovery response exceeds 512 KiB.")
+            raise AntomError("The tool response exceeds 512 KiB. Check the operation status in Antom before repeating the call.")
         return result
     except AntomError:
         raise
@@ -136,4 +140,6 @@ def execute(token: str, tool_name: str | None = None, arguments: dict | None = N
         message = safe_message(error)
         if message:
             raise AntomError(message) from None
-        raise AntomError("Antom MCP is unavailable or authorization has expired. Reauthorize and retry.") from None
+        if tool_name is None:
+            raise AntomError("Antom discovery failed. Check the connection and authorization.") from None
+        raise AntomError("Antom MCP did not confirm the outcome. Check the operation status before repeating the call.") from None
